@@ -9,6 +9,7 @@ import android.text.SpannableStringBuilder
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -20,6 +21,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.RecyclerView
 import com.chuckerteam.chucker.R
 import com.chuckerteam.chucker.databinding.ChuckerFragmentTransactionPayloadBinding
 import com.chuckerteam.chucker.internal.data.entity.HttpTransaction
@@ -63,7 +65,6 @@ internal class TransactionPayloadFragment :
     }
 
     private lateinit var payloadBinding: ChuckerFragmentTransactionPayloadBinding
-    private val payloadAdapter = TransactionBodyAdapter()
 
     private var backgroundSpanColor: Int = Color.YELLOW
     private var foregroundSpanColor: Int = Color.RED
@@ -89,9 +90,29 @@ internal class TransactionPayloadFragment :
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        payloadBinding.payloadRecyclerView.apply {
-            setHasFixedSize(true)
-            adapter = payloadAdapter
+        payloadBinding.rvJson.apply {
+            setTextSize(20F)
+            setScaleEnable(true)
+            addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+                override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                    when (e.action) {
+                        MotionEvent.ACTION_POINTER_UP -> {
+                            payloadBinding.hsv.requestDisallowInterceptTouchEvent(false)
+                        }
+                        MotionEvent.ACTION_POINTER_DOWN -> {
+                            payloadBinding.hsv.requestDisallowInterceptTouchEvent(true)
+                        }
+                    }
+                    return false
+                }
+
+                override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
+
+                }
+
+                override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+                }
+            });
         }
 
         viewModel.transaction
@@ -107,7 +128,7 @@ internal class TransactionPayloadFragment :
                         if (result.isEmpty()) {
                             showEmptyState()
                         } else {
-                            payloadAdapter.setItems(result)
+                            payloadBinding.rvJson.bindJson(result)
                             showPayloadState()
                         }
                         // Invalidating menu, because we need to hide menu items for empty payloads
@@ -127,14 +148,14 @@ internal class TransactionPayloadFragment :
                 getString(R.string.chucker_request_is_empty)
             }
             emptyStateGroup.visibility = View.VISIBLE
-            payloadRecyclerView.visibility = View.GONE
+            payloadBinding.rvJson.visibility = View.GONE
         }
     }
 
     private fun showPayloadState() {
         payloadBinding.apply {
             emptyStateGroup.visibility = View.GONE
-            payloadRecyclerView.visibility = View.VISIBLE
+            payloadBinding.rvJson.visibility = View.VISIBLE
         }
     }
 
@@ -200,11 +221,11 @@ internal class TransactionPayloadFragment :
     override fun onQueryTextSubmit(query: String): Boolean = false
 
     override fun onQueryTextChange(newText: String): Boolean {
-        if (newText.isNotBlank() && newText.length > NUMBER_OF_IGNORED_SYMBOLS) {
+        /*if (newText.isNotBlank() && newText.length > NUMBER_OF_IGNORED_SYMBOLS) {
             payloadAdapter.highlightQueryWithColors(newText, backgroundSpanColor, foregroundSpanColor)
         } else {
             payloadAdapter.resetHighlight()
-        }
+        }*/
         return true
     }
 
@@ -212,7 +233,7 @@ internal class TransactionPayloadFragment :
         type: PayloadType,
         transaction: HttpTransaction,
         formatRequestBody: Boolean
-    ): MutableList<TransactionPayloadItem> {
+    ): String {
         return withContext(Dispatchers.Default) {
             val result = mutableListOf<TransactionPayloadItem>()
 
@@ -251,28 +272,44 @@ internal class TransactionPayloadFragment :
             if (type == PayloadType.RESPONSE && responseBitmap != null) {
                 val bitmapLuminance = responseBitmap.calculateLuminance()
                 result.add(TransactionPayloadItem.ImageItem(responseBitmap, bitmapLuminance))
-                return@withContext result
+                return@withContext bodyString
             }
 
             when {
                 isBodyEncoded -> {
                     val text = requireContext().getString(R.string.chucker_body_omitted)
-                    result.add(TransactionPayloadItem.BodyLineItem(SpannableStringBuilder.valueOf(text)))
+                    result.add(
+                        TransactionPayloadItem.BodyLineItem(
+                            SpannableStringBuilder.valueOf(
+                                text
+                            )
+                        )
+                    )
                 }
                 bodyString.isBlank() -> {
                     val text = requireContext().getString(R.string.chucker_body_empty)
-                    result.add(TransactionPayloadItem.BodyLineItem(SpannableStringBuilder.valueOf(text)))
+                    result.add(
+                        TransactionPayloadItem.BodyLineItem(
+                            SpannableStringBuilder.valueOf(
+                                text
+                            )
+                        )
+                    )
                 }
                 else -> bodyString.lines().forEach {
                     result.add(TransactionPayloadItem.BodyLineItem(SpannableStringBuilder.valueOf(it)))
                 }
             }
 
-            return@withContext result
+            return@withContext bodyString
         }
     }
 
-    private suspend fun saveToFile(type: PayloadType, uri: Uri, transaction: HttpTransaction): Boolean {
+    private suspend fun saveToFile(
+        type: PayloadType,
+        uri: Uri,
+        transaction: HttpTransaction
+    ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 requireContext().contentResolver.openFileDescriptor(uri, "w")?.use {
